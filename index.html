@@ -1,0 +1,2795 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>O Último Pixel - Portal Quântico & Fases Progressivas</title>
+  <style>
+    /* ==========================================================================
+       ESTILOS GERAIS & TEMA DARK NEON CYBERPUNK
+       ========================================================================== */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: #05070a;
+      color: #e6edf3;
+      font-family: 'Consolas', 'Courier New', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Container do Jogo com Proporção Fixa */
+    #game-container {
+      position: relative;
+      width: 960px;
+      height: 640px;
+      max-width: 98vw;
+      max-height: 92vh;
+      aspect-ratio: 960 / 640;
+      background: radial-gradient(circle at 50% 35%, #101726 0%, #0a0d14 70%, #030508 100%);
+      border: 2px solid #1f2937;
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.2), inset 0 0 50px rgba(0, 0, 0, 0.85);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+
+    /* Linhas de Varredura Estilo CRT */
+    .crt-overlay {
+      pointer-events: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.22) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.02),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.02)
+      );
+      background-size: 100% 4px, 6px 100%;
+      z-index: 10;
+    }
+
+    /* Vinheta periférica escura */
+    .vignette {
+      pointer-events: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      box-shadow: inset 0 0 110px rgba(0, 0, 0, 0.88);
+      z-index: 11;
+    }
+
+    /* Barra de Ajuda */
+    .controls-hint {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #7d8590;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+
+    .controls-hint span {
+      color: #00f0ff;
+      border: 1px solid #30363d;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #161b22;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <canvas id="gameCanvas" width="960" height="640"></canvas>
+    <div class="crt-overlay"></div>
+    <div class="vignette"></div>
+  </div>
+
+  <div class="controls-hint">
+    Mover: <span>A / D</span> | Pulo & Duplo: <span>W / Espaço</span> | Dash: <span>Shift / K</span> | Stomp/Queda: <span>S / ↓</span> | Música: <span>M</span> | Reiniciar: <span>R</span>
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * O ÚLTIMO PIXEL - SISTEMA DE FASES & PORTAL DIMENSIONAL
+     * ============================================================================
+     * - Coleta de Bits de Dados para estabilizar o Portal Dimensional.
+     * - 5 Fases progressivas e balanceadas + Modo Infinito Prestígio.
+     * - Plataformas que tombam e escorregam nas pontas com quebra cronometrada.
+     * - Sistema de Vidas (Pixel Cores) e checkpoints inteligentes por fase.
+     * - 100% Vanilla JS + HTML5 Canvas 2D + Web Audio API procedural.
+     */
+
+    // --- 1. SÍNTESE DE ÁUDIO PROCEDURAL (ZERO DEPENDÊNCIAS) ---
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioClass) this.ctx = new AudioClass();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playJump() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.exponentialRampToValueAtTime(640, now + 0.1);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.11);
+      }
+
+      playDoubleJump() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(500, now);
+        osc.frequency.exponentialRampToValueAtTime(980, now + 0.13);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.13);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.14);
+      }
+
+      playLand() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.07);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.07);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      }
+
+      playCollectBit() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        // Acorde digital ascendente cristalino
+        [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + i * 0.04);
+          gain.gain.setValueAtTime(0.08, now + i * 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.04 + 0.12);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + i * 0.04);
+          osc.stop(now + i * 0.04 + 0.13);
+        });
+      }
+
+      playPortalOpen() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.4);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.5);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.52);
+      }
+
+      playWarpStage() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        // Salto hiperespacial
+        for (let i = 0; i < 6; i++) {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(300 + i * 160, now + i * 0.06);
+          osc.frequency.linearRampToValueAtTime(800 + i * 200, now + i * 0.06 + 0.1);
+          gain.gain.setValueAtTime(0.12, now + i * 0.06);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.12);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + i * 0.06);
+          osc.stop(now + i * 0.06 + 0.13);
+        }
+      }
+
+      playTick() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(760, now);
+        gain.gain.setValueAtTime(0.04, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.04);
+      }
+
+      playSlide() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(190, now);
+        osc.frequency.linearRampToValueAtTime(280, now + 0.05);
+        gain.gain.setValueAtTime(0.03, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.06);
+      }
+
+      playCollapse() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.28);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.29);
+      }
+
+      playDeath() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.linearRampToValueAtTime(60, now + 0.5);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.6);
+      }
+
+      playDash() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(850, now);
+        osc.frequency.exponentialRampToValueAtTime(140, now + 0.15);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      }
+
+      playSuperBounce() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.exponentialRampToValueAtTime(1100, now + 0.22);
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.26);
+      }
+
+      playShock() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.linearRampToValueAtTime(50, now + 0.22);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.24);
+      }
+
+      playLaserCharge() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < 3; i++) {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(700 + i * 220, now + i * 0.1);
+          gain.gain.setValueAtTime(0.12, now + i * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.07);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + i * 0.1);
+          osc.stop(now + i * 0.1 + 0.08);
+        }
+      }
+
+      playLaserFire() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1200, now);
+        osc.frequency.exponentialRampToValueAtTime(70, now + 0.32);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.33);
+      }
+
+      playEnemyStomp() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(450, now);
+        osc.frequency.exponentialRampToValueAtTime(90, now + 0.15);
+        gain.gain.setValueAtTime(0.24, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      }
+
+      playComboUp(combo) {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        const baseFreq = 440 * Math.pow(1.12, Math.min(10, combo));
+        osc.frequency.setValueAtTime(baseFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.14);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      }
+
+      // --- SINTETIZADOR BGM PROCEDURAL CYBERPUNK ---
+      playKick(time) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(130, time);
+        osc.frequency.exponentialRampToValueAtTime(32, time + 0.09);
+        gain.gain.setValueAtTime(0.18, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.11);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.12);
+      }
+
+      playSnare(time) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(220, time);
+        osc.frequency.exponentialRampToValueAtTime(80, time + 0.08);
+        gain.gain.setValueAtTime(0.1, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.09);
+      }
+
+      playHiHat(time) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(9500, time);
+        gain.gain.setValueAtTime(0.035, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.035);
+      }
+
+      playBassSynth(freq, time, dur = 0.08) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const filter = this.ctx.createBiquadFilter();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, time);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(550, time);
+        filter.frequency.exponentialRampToValueAtTime(180, time + dur);
+        gain.gain.setValueAtTime(0.065, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + dur + 0.02);
+      }
+
+      updateBGM(isPlaying) {
+        if (!isPlaying || !this.ctx || this.bgmMuted) return;
+
+        if (!this.nextNoteTime || this.nextNoteTime < this.ctx.currentTime) {
+          this.nextNoteTime = this.ctx.currentTime + 0.05;
+          this.bgmStep = 0;
+        }
+
+        const stepDuration = 0.1136; // 132 BPM semicolcheias
+        const bassNotes = [65.41, 65.41, 77.78, 65.41, 87.31, 65.41, 98.00, 77.78, 65.41, 65.41, 116.54, 98.00, 87.31, 77.78, 65.41, 58.27];
+
+        while (this.nextNoteTime < this.ctx.currentTime + 0.12) {
+          const step = this.bgmStep % 16;
+          const time = Math.max(this.ctx.currentTime, this.nextNoteTime);
+
+          // Bumbo 4-on-the-floor
+          if (step === 0 || step === 4 || step === 8 || step === 12) {
+            this.playKick(time);
+          }
+          // Caixa cibernética
+          if (step === 4 || step === 12) {
+            this.playSnare(time);
+          }
+          // Chimbau acelerado
+          if (step % 2 === 1) {
+            this.playHiHat(time);
+          }
+          // Linha de baixo pulsante cyberpunk
+          this.playBassSynth(bassNotes[step], time, 0.08);
+
+          this.nextNoteTime += stepDuration;
+          this.bgmStep++;
+        }
+      }
+    }
+
+    const sound = new SoundFX();
+
+    // --- 2. SISTEMA DE PARTÍCULAS NEON ---
+    class Particle {
+      constructor(x, y, vx, vy, color, size, life, shape = 'square', gravity = 0.15) {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = vy;
+        this.color = color;
+        this.size = size;
+        this.life = life;
+        this.maxLife = life;
+        this.shape = shape;
+        this.gravity = gravity;
+        this.drag = 0.96;
+      }
+
+      update() {
+        this.vx *= this.drag;
+        this.vy *= this.drag;
+        this.vy += this.gravity;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life--;
+        return this.life > 0;
+      }
+
+      draw(ctx) {
+        const progress = this.life / this.maxLife;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, progress);
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 8;
+
+        const currentSize = this.size * (0.3 + 0.7 * progress);
+
+        if (this.shape === 'square') {
+          ctx.fillRect(this.x - currentSize / 2, this.y - currentSize / 2, currentSize, currentSize);
+        } else {
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, currentSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    class ParticleSystem {
+      constructor() {
+        this.particles = [];
+      }
+
+      add(particle) {
+        this.particles.push(particle);
+      }
+
+      emitDust(x, y, color = '#00ff88', count = 6, angleSpread = Math.PI, speed = 2.8) {
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI / 2) + (Math.random() - 0.5) * angleSpread;
+          const spd = Math.random() * speed + 1;
+          const vx = Math.cos(angle) * spd;
+          const vy = -Math.sin(angle) * spd;
+          const size = Math.random() * 3 + 2;
+          const life = Math.floor(Math.random() * 18 + 12);
+          this.add(new Particle(x, y, vx, vy, color, size, life, 'square', 0.1));
+        }
+      }
+
+      emitCollapseDebris(x, y, w, h, color = '#00f0ff') {
+        const count = Math.min(26, Math.floor((w * h) / 75));
+        for (let i = 0; i < count; i++) {
+          const px = x + Math.random() * w;
+          const py = y + Math.random() * h;
+          const vx = (Math.random() - 0.5) * 7;
+          const vy = (Math.random() - 0.8) * 6;
+          const size = Math.random() * 5 + 2;
+          const life = Math.floor(Math.random() * 35 + 20);
+          const colors = [color, '#ff3366', '#ffffff', '#b537f2'];
+          const chosenColor = colors[Math.floor(Math.random() * colors.length)];
+          this.add(new Particle(px, py, vx, vy, chosenColor, size, life, 'square', 0.25));
+        }
+      }
+
+      emitPortalSparks(x, y, color = '#00f0ff') {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * 45 + 25;
+        const px = x + Math.cos(angle) * dist;
+        const py = y + Math.sin(angle) * dist;
+        // Puxadas em direção ao centro do vórtice quântico
+        const vx = (x - px) * 0.05 + (Math.random() - 0.5) * 2;
+        const vy = (y - py) * 0.05 + (Math.random() - 0.5) * 2;
+        this.add(new Particle(px, py, vx, vy, color, Math.random() * 3 + 2, 25, 'circle', 0));
+      }
+
+      emitBitCollect(x, y, color = '#ffd700') {
+        for (let i = 0; i < 24; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = Math.random() * 6 + 2;
+          this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, color, Math.random() * 4 + 2, 28, 'square', 0.05));
+        }
+      }
+
+      emitStageCompleteVortex(x, y, color = '#00f0ff') {
+        for (let i = 0; i < 60; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = Math.random() * 9 + 3;
+          this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, color, Math.random() * 5 + 3, 40, 'square', 0.08));
+        }
+      }
+
+      emitDeathExplosion(x, y) {
+        for (let i = 0; i < 50; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = Math.random() * 8 + 2;
+          this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, '#00ff88', Math.random() * 4 + 2, 45, 'square', 0.15));
+        }
+      }
+
+      emitDashSparks(x, y, dir, color = '#00f0ff') {
+        for (let i = 0; i < 18; i++) {
+          const vx = -dir * (Math.random() * 9 + 4);
+          const vy = (Math.random() - 0.5) * 5;
+          const clr = Math.random() > 0.4 ? color : '#ff00aa';
+          this.add(new Particle(x, y, vx, vy, clr, Math.random() * 4 + 2, 20, 'square', 0.02));
+        }
+      }
+
+      emitBounceSparks(x, y, color = '#39ff14') {
+        for (let i = 0; i < 22; i++) {
+          const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.3;
+          const spd = Math.random() * 8 + 4;
+          this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, color, Math.random() * 4 + 2, 26, 'square', 0.18));
+        }
+      }
+
+      emitShockParticles(x, y) {
+        for (let i = 0; i < 28; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = Math.random() * 8 + 3;
+          const color = Math.random() > 0.5 ? '#ffff00' : '#ff0055';
+          this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, color, Math.random() * 4 + 2, 32, 'square', 0.12));
+        }
+      }
+
+      emitEnemyExplosion(x, y) {
+        for (let i = 0; i < 35; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = Math.random() * 9 + 3;
+          const color = Math.random() > 0.5 ? '#ff0055' : '#ffff00';
+          this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, color, Math.random() * 5 + 2, 35, 'square', 0.2));
+        }
+      }
+
+      emitLaserBeamSparks(x, y, isHorizontal) {
+        for (let i = 0; i < 4; i++) {
+          const vx = isHorizontal ? (Math.random() - 0.5) * 6 : (Math.random() - 0.5) * 12;
+          const vy = isHorizontal ? (Math.random() - 0.5) * 12 : (Math.random() - 0.5) * 6;
+          this.add(new Particle(x, y, vx, vy, '#ffffff', Math.random() * 3 + 2, 16, 'circle', 0));
+        }
+      }
+
+      emitOverclockAura(x, y) {
+        const angle = Math.random() * Math.PI * 2;
+        const spd = Math.random() * 3 + 1;
+        const colors = ['#ffd700', '#00f0ff', '#ff00bb', '#39ff14'];
+        const chosen = colors[Math.floor(Math.random() * colors.length)];
+        this.add(new Particle(x, y, Math.cos(angle) * spd, Math.sin(angle) * spd, chosen, Math.random() * 3 + 2, 22, 'square', -0.05));
+      }
+
+      update() {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          if (!this.particles[i].update()) {
+            this.particles.splice(i, 1);
+          }
+        }
+      }
+
+      draw(ctx) {
+        for (const p of this.particles) {
+          p.draw(ctx);
+        }
+      }
+
+      clear() {
+        this.particles = [];
+      }
+    }
+
+    // --- 3. ITENS COLECIONÁVEIS: BITS DE DADOS NEON ---
+    class CollectibleBit {
+      constructor(x, y, id) {
+        this.x = x;
+        this.baseY = y;
+        this.y = y;
+        this.id = id;
+        this.size = 14;
+        this.isCollected = false;
+        this.floatOffset = Math.random() * Math.PI * 2;
+        this.color = '#ffd700';
+      }
+
+      update(dt) {
+        this.floatOffset += dt * 3.5;
+        this.y = this.baseY + Math.sin(this.floatOffset) * 6;
+      }
+
+      draw(ctx) {
+        if (this.isCollected) return;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.floatOffset * 0.7);
+
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 15;
+
+        // Cristal em losango neon
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(0, -this.size);
+        ctx.lineTo(this.size * 0.8, 0);
+        ctx.lineTo(0, this.size);
+        ctx.lineTo(-this.size * 0.8, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        // Núcleo branco central
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    // --- 4. O PORTAL DIMENSIONAL (OBJETIVO DA FASE) ---
+    class DimensionalPortal {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 32;
+        this.isOpen = false;
+        this.angle = 0;
+        this.pulse = 0;
+        this.color = '#00f0ff';
+        this.particlesCooldown = 0;
+      }
+
+      setOpen(open, color = '#00f0ff') {
+        if (!this.isOpen && open) {
+          sound.playPortalOpen();
+        }
+        this.isOpen = open;
+        this.color = color;
+      }
+
+      update(dt, particleSystem) {
+        this.angle += dt * 2.8;
+        this.pulse = Math.sin(Date.now() * 0.005) * 4;
+
+        if (this.isOpen) {
+          this.particlesCooldown -= dt;
+          if (this.particlesCooldown <= 0) {
+            particleSystem.emitPortalSparks(this.x, this.y, this.color);
+            this.particlesCooldown = 0.08;
+          }
+        }
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        const currentRadius = this.radius + this.pulse;
+
+        // Anel Exterior Bloqueado vs Vórtice Ativo
+        if (!this.isOpen) {
+          ctx.strokeStyle = '#4b5563';
+          ctx.lineWidth = 3;
+          ctx.setLineDash([6, 6]);
+          ctx.beginPath();
+          ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Símbolo de Cadeado / Desativado
+          ctx.fillStyle = '#6b7280';
+          ctx.font = 'bold 12px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('PORTAL', 0, -5);
+          ctx.font = '10px monospace';
+          ctx.fillStyle = '#ef4444';
+          ctx.fillText('[TRAVADO]', 0, 10);
+        } else {
+          // Vórtice Dimensional Aberto Radiante
+          ctx.shadowColor = this.color;
+          ctx.shadowBlur = 25;
+
+          // Gradiente do horizonte de eventos
+          const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, currentRadius);
+          grad.addColorStop(0, '#ffffff');
+          grad.addColorStop(0.3, this.color);
+          grad.addColorStop(0.8, '#b537f2');
+          grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Anéis rotativos cibernéticos
+          ctx.save();
+          ctx.rotate(this.angle);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([12, 8]);
+          ctx.beginPath();
+          ctx.arc(0, 0, currentRadius + 4, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.save();
+          ctx.rotate(-this.angle * 1.5);
+          ctx.strokeStyle = this.color;
+          ctx.lineWidth = 3;
+          ctx.setLineDash([8, 14]);
+          ctx.beginPath();
+          ctx.arc(0, 0, currentRadius - 8, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+
+          // Indicador de Entrada
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('▼ ENTRE ▼', 0, -currentRadius - 10);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // --- 4.1 INIMIGOS CIBERNÉTICOS: SENTINELAS BUG ("CORRUPT_BYTES") ---
+    class GlitchSentinel {
+      constructor(x, y, rangeX = 130, speed = 2.0) {
+        this.baseX = x;
+        this.baseY = y;
+        this.x = x;
+        this.y = y;
+        this.w = 20;
+        this.h = 20;
+        this.rangeX = rangeX;
+        this.speed = speed;
+        this.timer = Math.random() * Math.PI * 2;
+        this.isAlive = true;
+        this.respawnTimer = 0;
+        this.pulse = 0;
+      }
+
+      update(dt) {
+        if (!this.isAlive) {
+          this.respawnTimer -= dt;
+          if (this.respawnTimer <= 0) {
+            this.isAlive = true;
+            this.x = this.baseX;
+            this.y = this.baseY;
+          }
+          return;
+        }
+
+        this.timer += dt * this.speed;
+        this.x = this.baseX + Math.sin(this.timer) * this.rangeX;
+        this.y = this.baseY + Math.cos(this.timer * 2.2) * 16;
+        this.pulse = Math.sin(this.timer * 5);
+      }
+
+      draw(ctx) {
+        if (!this.isAlive) return;
+
+        ctx.save();
+        ctx.translate(this.x + this.w / 2, this.y + this.h / 2);
+
+        // Brilho pulsante escarlate
+        ctx.shadowColor = '#ff0055';
+        ctx.shadowBlur = 15 + this.pulse * 5;
+
+        // Corpo do drone bug
+        ctx.fillStyle = '#ff0055';
+        ctx.beginPath();
+        ctx.moveTo(0, -this.h / 2 - 2);
+        ctx.lineTo(this.w / 2 + 3, 0);
+        ctx.lineTo(0, this.h / 2 + 2);
+        ctx.lineTo(-this.w / 2 - 3, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        // Núcleo cibernético
+        ctx.fillStyle = '#16050b';
+        ctx.beginPath();
+        ctx.arc(0, 0, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Olho laser central
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(this.pulse > 0 ? 1 : -1, 0, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Chifres / espinhos
+        ctx.strokeStyle = '#ffff00';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-this.w / 2, -3);
+        ctx.lineTo(-this.w / 2 - 5, -8);
+        ctx.moveTo(this.w / 2, -3);
+        ctx.lineTo(this.w / 2 + 5, -8);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    // --- 4.2 SISTEMA DE LASERS DO FIREWALL (RAIO INCANDESCENTE) ---
+    class FirewallLaser {
+      constructor(canvasWidth, canvasHeight) {
+        this.width = canvasWidth;
+        this.height = canvasHeight;
+        this.state = 'IDLE'; // 'IDLE', 'WARNING', 'FIRING'
+        this.timer = 2.5;
+        this.cooldown = 3.8;
+        this.warningDuration = 0.92;
+        this.firingDuration = 0.35;
+        this.isHorizontal = true;
+        this.pos = 300;
+        this.beamThickness = 22;
+      }
+
+      reset() {
+        this.state = 'IDLE';
+        this.timer = 2.5;
+      }
+
+      update(dt, playerY, sound, particleSystem) {
+        this.timer -= dt;
+
+        if (this.state === 'IDLE') {
+          if (this.timer <= 0) {
+            this.state = 'WARNING';
+            this.timer = this.warningDuration;
+            this.isHorizontal = Math.random() > 0.25;
+            if (this.isHorizontal) {
+              const targetY = Math.max(90, Math.min(520, playerY + (Math.random() - 0.5) * 70));
+              this.pos = targetY;
+            } else {
+              this.pos = Math.random() * (this.width - 240) + 120;
+            }
+            sound.playLaserCharge();
+          }
+        } else if (this.state === 'WARNING') {
+          if (this.timer <= 0) {
+            this.state = 'FIRING';
+            this.timer = this.firingDuration;
+            sound.playLaserFire();
+            return true;
+          }
+        } else if (this.state === 'FIRING') {
+          if (this.isHorizontal) {
+            particleSystem.emitLaserBeamSparks(Math.random() * this.width, this.pos, true);
+          } else {
+            particleSystem.emitLaserBeamSparks(this.pos, Math.random() * this.height, false);
+          }
+
+          if (this.timer <= 0) {
+            this.state = 'IDLE';
+            this.timer = this.cooldown;
+          }
+        }
+
+        return false;
+      }
+
+      checkPlayerCollision(player) {
+        if (this.state !== 'FIRING') return false;
+
+        const half = this.beamThickness / 2;
+        if (this.isHorizontal) {
+          return player.y + player.h > this.pos - half && player.y < this.pos + half;
+        } else {
+          return player.x + player.w > this.pos - half && player.x < this.pos + half;
+        }
+      }
+
+      draw(ctx) {
+        if (this.state === 'WARNING') {
+          ctx.save();
+          const flash = Math.sin(Date.now() * 0.045) > 0;
+          ctx.strokeStyle = flash ? '#ff0044' : 'rgba(255, 0, 68, 0.25)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 8]);
+          ctx.beginPath();
+          if (this.isHorizontal) {
+            ctx.moveTo(0, this.pos);
+            ctx.lineTo(this.width, this.pos);
+          } else {
+            ctx.moveTo(this.pos, 0);
+            ctx.lineTo(this.pos, this.height);
+          }
+          ctx.stroke();
+
+          ctx.fillStyle = '#ff0044';
+          ctx.font = 'bold 11px monospace';
+          if (this.isHorizontal) {
+            ctx.fillText('⚠ AVISO: LASER FIREWALL ⚠', 20, this.pos - 6);
+            ctx.fillText('⚠ AVISO: LASER FIREWALL ⚠', this.width - 200, this.pos - 6);
+          } else {
+            ctx.fillText('⚠ LASER ⚠', this.pos - 28, 28);
+          }
+          ctx.restore();
+        } else if (this.state === 'FIRING') {
+          ctx.save();
+          ctx.shadowColor = '#ff0044';
+          ctx.shadowBlur = 30;
+
+          if (this.isHorizontal) {
+            ctx.fillStyle = 'rgba(255, 0, 68, 0.4)';
+            ctx.fillRect(0, this.pos - this.beamThickness, this.width, this.beamThickness * 2);
+            ctx.fillStyle = '#ff1744';
+            ctx.fillRect(0, this.pos - this.beamThickness / 2, this.width, this.beamThickness);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, this.pos - 3, this.width, 6);
+          } else {
+            ctx.fillStyle = 'rgba(255, 0, 68, 0.4)';
+            ctx.fillRect(this.pos - this.beamThickness, 0, this.beamThickness * 2, this.height);
+            ctx.fillStyle = '#ff1744';
+            ctx.fillRect(this.pos - this.beamThickness / 2, 0, this.beamThickness, this.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(this.pos - 3, 0, 6, this.height);
+          }
+          ctx.restore();
+        }
+      }
+    }
+
+    // --- 5. PLATAFORMAS FÍSICAS (QUADRADOS DINÂMICOS, GANGORRA & TIPOS ESPECIAIS) ---
+    class UIPlatform {
+      constructor({
+        x,
+        y,
+        width,
+        height,
+        title = 'UI',
+        type = 'BUTTON', // 'BUTTON', 'ALERT', 'BOUNCE', 'VOLT', 'MOVING', 'GLITCH'
+        accentColor = '#00f0ff',
+        mass = 1.0,
+        springY = null,
+        maxStandTimer = 0.95,
+        edgeTiltSensitivity = 1.0,
+        moveRange = 85,
+        moveSpeed = 1.6
+      }) {
+        this.x = x;
+        this.y = y;
+        this.targetY = springY !== null ? springY : y;
+        this.width = width;
+        this.height = height;
+        this.title = title;
+        this.type = type;
+        this.accentColor = accentColor;
+        this.mass = mass;
+        this.edgeTiltSensitivity = edgeTiltSensitivity;
+
+        this.vx = 0;
+        this.vy = 0;
+        this.angle = 0;
+        this.vAngle = 0;
+        this.kSpring = 0.08 / mass;
+        this.damping = 0.88;
+
+        this.maxStandTimer = maxStandTimer;
+        this.standTimer = maxStandTimer;
+        this.isBeingStepped = false;
+        this.steppedOffset = 0;
+
+        this.hasFallen = false;
+        this.isCollapsing = false;
+        this.alpha = 1.0;
+        this.shakeOffset = { x: 0, y: 0 };
+        this.tickCooldown = 0;
+        this.slideSoundCooldown = 0;
+
+        this.isSpawning = true;
+
+        // Propriedades para tipos especiais
+        this.bounceAnim = 0;
+
+        // Plataforma Móvel (MOVING)
+        this.baseX = x;
+        this.moveRange = moveRange;
+        this.moveSpeed = moveSpeed;
+        this.moveTimer = Math.random() * Math.PI * 2;
+        this.deltaX = 0;
+
+        // Plataforma Eletrizada (VOLT)
+        this.voltTimer = Math.random() * 2.0;
+        this.isElectrified = false;
+        this.isWarning = false;
+
+        // Plataforma Fantasma (GLITCH)
+        this.glitchTimer = Math.random() * 2.0;
+        this.isIntangible = false;
+        this.isGlitching = false;
+      }
+
+      update(dt, globalGravityMultiplier) {
+        if (this.y > 750) {
+          this.hasFallen = true;
+          return;
+        }
+
+        // Animação de compressão da mola (BOUNCE)
+        if (this.bounceAnim > 0) {
+          this.bounceAnim -= dt * 4;
+          if (this.bounceAnim < 0) this.bounceAnim = 0;
+        }
+
+        // Movimentação senoidal lateral (MOVING)
+        if (this.type === 'MOVING' && !this.isCollapsing) {
+          const prevX = this.x;
+          this.moveTimer += dt * this.moveSpeed;
+          this.x = this.baseX + Math.sin(this.moveTimer) * this.moveRange;
+          if (this.x < 15) this.x = 15;
+          if (this.x + this.width > 945) this.x = 945 - this.width;
+          this.deltaX = this.x - prevX;
+        } else {
+          this.deltaX = 0;
+        }
+
+        // Ciclo da Plataforma de Choque (VOLT)
+        if (this.type === 'VOLT') {
+          this.voltTimer += dt;
+          const cycle = this.voltTimer % 4.0;
+          if (cycle < 2.2) {
+            this.isElectrified = false;
+            this.isWarning = false;
+          } else if (cycle < 3.0) {
+            this.isElectrified = false;
+            this.isWarning = true;
+          } else {
+            this.isElectrified = true;
+            this.isWarning = false;
+          }
+        }
+
+        // Ciclo da Plataforma Fantasma (GLITCH)
+        if (this.type === 'GLITCH') {
+          this.glitchTimer += dt;
+          const cycle = this.glitchTimer % 4.2;
+          if (cycle < 2.2) {
+            this.isIntangible = false;
+            this.isGlitching = false;
+            this.alpha = 1.0;
+          } else if (cycle < 2.9) {
+            this.isIntangible = false;
+            this.isGlitching = true;
+            this.alpha = Math.sin(Date.now() * 0.05) > 0 ? 0.9 : 0.3;
+          } else {
+            this.isIntangible = true;
+            this.isGlitching = false;
+            this.alpha = 0.2;
+          }
+        }
+
+        if (this.isBeingStepped && !this.isCollapsing) {
+          // Plataformas BOUNCE não quebram ao pisar, pois servem de trampolim
+          if (this.type !== 'BOUNCE') {
+            this.standTimer -= dt;
+            this.tickCooldown -= dt;
+            this.slideSoundCooldown -= dt;
+
+            if (this.standTimer < this.maxStandTimer * 0.7 && this.tickCooldown <= 0) {
+              sound.playTick();
+              this.tickCooldown = Math.max(0.04, this.standTimer * 0.22);
+            }
+
+            const panic = 1.0 - (this.standTimer / this.maxStandTimer);
+            const shakeMag = panic * 8;
+            this.shakeOffset.x = (Math.random() - 0.5) * shakeMag;
+            this.shakeOffset.y = (Math.random() - 0.5) * shakeMag;
+
+            // Física de Gangorra & Deslize nas Pontas
+            if (Math.abs(this.steppedOffset) > 0.15) {
+              const pushAccel = this.steppedOffset * 0.95 * this.edgeTiltSensitivity;
+              this.vx += pushAccel;
+
+              const targetAngle = this.steppedOffset * 0.32 * this.edgeTiltSensitivity;
+              this.angle += (targetAngle - this.angle) * 0.22;
+
+              if (this.slideSoundCooldown <= 0 && Math.abs(this.vx) > 1.2) {
+                sound.playSlide();
+                this.slideSoundCooldown = 0.16;
+              }
+            }
+
+            if (this.standTimer <= 0) {
+              this.triggerCollapse();
+            }
+          }
+        } else {
+          this.shakeOffset.x = 0;
+          this.shakeOffset.y = 0;
+          this.angle += (0 - this.angle) * 0.12;
+        }
+
+        if (this.isCollapsing) {
+          const gravity = 0.58 * globalGravityMultiplier;
+          this.vy += gravity;
+          this.vAngle += 0.008 * (this.x % 2 === 0 ? 1 : -1);
+          this.angle += this.vAngle;
+          this.y += this.vy;
+          this.x += this.vx;
+          this.alpha = Math.max(0.2, 1 - (this.vy / 16));
+        } else {
+          if (this.type !== 'MOVING') {
+            this.x += this.vx;
+            this.vx *= 0.88;
+
+            if (this.x < 15) {
+              this.x = 15;
+              this.vx = Math.abs(this.vx) * 0.4;
+            } else if (this.x + this.width > 945) {
+              this.x = 945 - this.width;
+              this.vx = -Math.abs(this.vx) * 0.4;
+            }
+          }
+
+          const displacement = this.y - this.targetY;
+          const springForce = -this.kSpring * displacement;
+          
+          this.vy += springForce;
+          this.vy *= this.damping;
+          this.y += this.vy;
+
+          if (this.isSpawning && Math.abs(this.y - this.targetY) < 4) {
+            this.isSpawning = false;
+          }
+        }
+
+        this.isBeingStepped = false;
+      }
+
+      applyImpulse(forceY, impactX) {
+        this.vy += forceY / this.mass;
+        const relativeX = (impactX - (this.x + this.width / 2)) / (this.width / 2);
+        this.angle = relativeX * 0.12;
+      }
+
+      triggerCollapse() {
+        if (this.isCollapsing) return;
+        this.isCollapsing = true;
+        this.vy = 2.4;
+        sound.playCollapse();
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+
+        const drawX = this.x + this.shakeOffset.x;
+        const drawY = this.y + this.shakeOffset.y;
+
+        ctx.translate(drawX + this.width / 2, drawY + this.height / 2);
+        ctx.rotate(this.angle);
+
+        // Deformação de compressão na mola
+        if (this.bounceAnim > 0) {
+          ctx.scale(1.0 + this.bounceAnim * 0.15, 1.0 - this.bounceAnim * 0.35);
+        }
+
+        ctx.translate(-(this.width / 2), -(this.height / 2));
+
+        let currentBorderColor = this.accentColor;
+        let glowColor = this.accentColor;
+        let displayText = this.title;
+
+        // Customização visual por tipo de plataforma
+        if (this.type === 'BOUNCE') {
+          currentBorderColor = '#39ff14';
+          glowColor = '#39ff14';
+          displayText = '▲ BOUNCE ▲';
+        } else if (this.type === 'VOLT') {
+          if (this.isElectrified) {
+            const flash = Math.sin(Date.now() * 0.05) > 0;
+            currentBorderColor = flash ? '#ffff00' : '#ff0055';
+            glowColor = '#ff0055';
+            displayText = '⚡ 500V ⚡';
+          } else if (this.isWarning) {
+            currentBorderColor = '#f59e0b';
+            glowColor = '#f59e0b';
+            displayText = '! CARGA !';
+          } else {
+            currentBorderColor = '#475569';
+            glowColor = '#334155';
+            displayText = '[ SEGURO ]';
+          }
+        } else if (this.type === 'MOVING') {
+          currentBorderColor = '#38bdf8';
+          glowColor = '#38bdf8';
+          displayText = '◀ SLIDE ▶';
+        } else if (this.type === 'GLITCH') {
+          if (this.isIntangible) {
+            currentBorderColor = '#6b7280';
+            glowColor = '#374151';
+            displayText = '0x00_VOID';
+          } else {
+            currentBorderColor = '#c084fc';
+            glowColor = '#a855f7';
+            displayText = '0x404_GHOST';
+          }
+        }
+
+        if (this.standTimer < this.maxStandTimer && this.type !== 'BOUNCE') {
+          const ratio = this.standTimer / this.maxStandTimer;
+          if (ratio < 0.65) {
+            const flash = Math.sin(Date.now() * 0.045) > 0;
+            currentBorderColor = flash ? '#ff0055' : '#ffaa00';
+            glowColor = '#ff0055';
+          }
+        }
+
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = this.isBeingStepped || this.isElectrified ? 18 : 7;
+
+        ctx.fillStyle = '#0f1420';
+        ctx.fillRect(0, 0, this.width, this.height);
+
+        // Arcos elétricos no topo se VOLT estiver ativa
+        if (this.type === 'VOLT' && this.isElectrified) {
+          ctx.strokeStyle = '#ffff55';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(2, 0);
+          for (let step = 8; step < this.width; step += 8) {
+            ctx.lineTo(step, (Math.random() - 0.5) * 8);
+          }
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = currentBorderColor;
+        ctx.lineWidth = 2;
+        if (this.type === 'GLITCH' && this.isIntangible) {
+          ctx.setLineDash([4, 4]);
+        }
+        ctx.strokeRect(0, 0, this.width, this.height);
+        ctx.setLineDash([]);
+
+        if (this.type === 'ALERT') {
+          ctx.fillStyle = currentBorderColor;
+          ctx.fillRect(0, 0, this.width, 3);
+        } else if (this.type === 'BOUNCE') {
+          // Marcador neon de mola no topo
+          ctx.fillStyle = '#39ff14';
+          ctx.fillRect(0, 0, this.width, 3);
+        }
+
+        ctx.fillStyle = this.isElectrified ? '#ffff00' : '#ffffff';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(displayText, this.width / 2, this.height / 2 + 4);
+        ctx.textAlign = 'left';
+
+        // Marcadores de Ponta
+        ctx.fillStyle = currentBorderColor;
+        ctx.fillRect(2, this.height - 4, 3, 2);
+        ctx.fillRect(this.width - 5, this.height - 4, 3, 2);
+
+        // Barra de Quebra Rápida (para plataformas não-mola)
+        if (this.standTimer < this.maxStandTimer && !this.isCollapsing && this.type !== 'BOUNCE') {
+          const timerRatio = Math.max(0, this.standTimer / this.maxStandTimer);
+          ctx.fillStyle = '#ff0055';
+          ctx.fillRect(0, this.height - 3, this.width * (1 - timerRatio), 3);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // --- 6. CLASSE DO JOGADOR ("O ÚLTIMO PIXEL" COM DASH QUÂNTICO) ---
+    class Player {
+      constructor(x, y) {
+        this.startX = x;
+        this.startY = y;
+        this.reset();
+      }
+
+      reset() {
+        this.x = this.startX;
+        this.y = this.startY;
+        this.w = 16;
+        this.h = 16;
+        this.vx = 0;
+        this.vy = 0;
+
+        this.speed = 5.8;
+        this.friction = 0.83;
+        this.gravity = 0.50;
+        this.jumpForce = -11.0;
+        this.doubleJumpForce = -9.8;
+
+        this.jumpsLeft = 2;
+        this.isGrounded = false;
+        this.currentPlatform = null;
+
+        this.scaleX = 1.0;
+        this.scaleY = 1.0;
+
+        this.trail = [];
+        this.maxTrail = 6;
+
+        // --- SISTEMA DE DASH QUÂNTICO ---
+        this.facing = 1;
+        this.canDash = true;
+        this.isDashing = false;
+        this.dashTimer = 0;
+        this.dashCooldown = 0;
+        this.dashDuration = 0.15;
+        this.dashSpeed = 15.0;
+        this.dashGhosts = [];
+      }
+
+      handleInput(keys) {
+        if (this.isDashing) return;
+
+        let moveDir = 0;
+        if (keys['ArrowLeft'] || keys['KeyA']) {
+          moveDir -= 1;
+          this.facing = -1;
+        }
+        if (keys['ArrowRight'] || keys['KeyD']) {
+          moveDir += 1;
+          this.facing = 1;
+        }
+
+        if (moveDir !== 0) {
+          this.vx += moveDir * 1.15;
+          if (Math.abs(this.vx) > this.speed) {
+            this.vx = Math.sign(this.vx) * this.speed;
+          }
+        }
+      }
+
+      jump(particleSystem, sound) {
+        if (this.isDashing) return;
+
+        if (this.jumpsLeft > 0) {
+          const isFirstJump = this.jumpsLeft === 2;
+          this.vy = isFirstJump ? this.jumpForce : this.doubleJumpForce;
+          this.isGrounded = false;
+          this.currentPlatform = null;
+          this.jumpsLeft--;
+
+          this.scaleX = 0.7;
+          this.scaleY = 1.4;
+
+          if (isFirstJump) {
+            sound.playJump();
+            particleSystem.emitDust(this.x + this.w / 2, this.y + this.h, '#00ff88', 8);
+          } else {
+            sound.playDoubleJump();
+            particleSystem.emitDust(this.x + this.w / 2, this.y + this.h, '#00f0ff', 14, Math.PI * 2, 4);
+          }
+        }
+      }
+
+      dash(particleSystem, sound, keys) {
+        if (!this.canDash || this.dashCooldown > 0) return;
+
+        let dashDir = this.facing;
+        if (keys['ArrowLeft'] || keys['KeyA']) dashDir = -1;
+        if (keys['ArrowRight'] || keys['KeyD']) dashDir = 1;
+
+        this.isDashing = true;
+        this.canDash = false;
+        this.dashTimer = this.dashDuration;
+        this.dashCooldown = 0.75;
+        this.currentPlatform = null;
+        this.isGrounded = false;
+
+        this.vx = dashDir * this.dashSpeed;
+        this.vy = 0; // Impulso sem gravidade
+
+        this.scaleX = 1.8;
+        this.scaleY = 0.6;
+
+        sound.playDash();
+        particleSystem.emitDashSparks(this.x + this.w / 2, this.y + this.h / 2, dashDir);
+      }
+
+      fastFall(particleSystem, sound) {
+        if (!this.isGrounded && !this.isDashing && this.vy < 10) {
+          this.vy = 12.5;
+          this.scaleX = 0.65;
+          this.scaleY = 1.5;
+          particleSystem.emitDust(this.x + this.w / 2, this.y, '#00f0ff', 5, Math.PI, 3);
+        }
+      }
+
+      update(particleSystem, dt = 0.016) {
+        if (this.dashCooldown > 0) {
+          this.dashCooldown -= dt;
+        }
+
+        if (this.isDashing) {
+          this.dashTimer -= dt;
+          this.x += this.vx;
+          this.y += this.vy;
+
+          // Clones holográficos de rastro neon
+          this.dashGhosts.unshift({ x: this.x, y: this.y, alpha: 0.85 });
+          if (this.dashGhosts.length > 5) this.dashGhosts.pop();
+
+          if (this.dashTimer <= 0) {
+            this.isDashing = false;
+            this.vx *= 0.45;
+          }
+        } else {
+          this.vy += this.gravity;
+          this.vx *= this.isGrounded ? this.friction : 0.94;
+
+          if (this.isGrounded && this.currentPlatform) {
+            this.y = this.currentPlatform.y - this.h;
+            this.vy = this.currentPlatform.vy;
+          } else {
+            this.y += this.vy;
+          }
+
+          this.x += this.vx;
+        }
+
+        // Dissolve clones de dash
+        for (let i = this.dashGhosts.length - 1; i >= 0; i--) {
+          this.dashGhosts[i].alpha -= dt * 4;
+          if (this.dashGhosts[i].alpha <= 0) this.dashGhosts.splice(i, 1);
+        }
+
+        this.scaleX += (1.0 - this.scaleX) * 0.15;
+        this.scaleY += (1.0 - this.scaleY) * 0.15;
+
+        if (this.x < 0) {
+          this.x = 0;
+          this.vx = 0;
+        } else if (this.x + this.w > 960) {
+          this.x = 960 - this.w;
+          this.vx = 0;
+        }
+
+        this.trail.unshift({ x: this.x, y: this.y });
+        if (this.trail.length > this.maxTrail) {
+          this.trail.pop();
+        }
+      }
+
+      draw(ctx) {
+        ctx.save();
+
+        // Rastros holográficos do dash quântico
+        for (const ghost of this.dashGhosts) {
+          ctx.save();
+          ctx.globalAlpha = ghost.alpha * 0.7;
+          ctx.fillStyle = '#ff00aa';
+          ctx.shadowColor = '#00f0ff';
+          ctx.shadowBlur = 14;
+          ctx.fillRect(ghost.x, ghost.y, this.w, this.h);
+          ctx.restore();
+        }
+
+        // Rastro regular do pixel
+        for (let i = 0; i < this.trail.length; i++) {
+          const t = this.trail[i];
+          const alpha = (1 - (i / this.trail.length)) * 0.35;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = this.isDashing ? '#00f0ff' : '#00ff88';
+          ctx.shadowColor = this.isDashing ? '#00f0ff' : '#00ff88';
+          ctx.shadowBlur = 6;
+          ctx.fillRect(t.x + 2, t.y + 2, this.w - 4, this.h - 4);
+          ctx.restore();
+        }
+
+        ctx.translate(this.x + this.w / 2, this.y + this.h / 2);
+        ctx.scale(this.scaleX, this.scaleY);
+        ctx.translate(-(this.w / 2), -(this.h / 2));
+
+        const playerColor = this.isDashing ? '#00f0ff' : (this.canDash ? '#00ff88' : '#6fe3a1');
+        ctx.shadowColor = playerColor;
+        ctx.shadowBlur = this.isDashing ? 25 : 18;
+
+        ctx.fillStyle = playerColor;
+        ctx.fillRect(0, 0, this.w, this.h);
+
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(3, 3, this.w - 6, this.h - 6);
+
+        // Olho direcional
+        ctx.fillStyle = '#003311';
+        const eyeX = this.facing > 0 ? 9 : 3;
+        ctx.fillRect(eyeX, 5, 4, 4);
+
+        // Barra de recarga sutil de dash sobre a cabeça
+        if (this.dashCooldown > 0 && !this.canDash) {
+          ctx.fillStyle = '#ff0055';
+          ctx.fillRect(1, -4, Math.max(0, (1 - this.dashCooldown / 0.75) * 14), 2);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // --- 7. CONFIGURAÇÃO DE FASES E BALANCEAMENTO PROGRESSIVO HARDCORE ---
+    const STAGE_CONFIGS = [
+      {
+        id: 1,
+        name: "SETOR ALFA: INICIALIZAÇÃO VELOZ",
+        sub: "Plataformas quebram rápido (0.8s). Desvie do Laser!",
+        requiredBits: 2,
+        breakTime: 0.80,
+        minWidth: 60,
+        maxWidth: 78,
+        tiltSensitivity: 0.95,
+        themeColor: '#00f0ff',
+        portalPos: { x: 830, y: 150 },
+        bitPositions: [
+          { x: 230, y: 200 },
+          { x: 500, y: 300 }
+        ],
+        spawnInterval: 1.4,
+        sentinelCount: 1,
+        laserInterval: 5.2
+      },
+      {
+        id: 2,
+        name: "SETOR BETA: VAZAMENTO DE MEMÓRIA",
+        sub: "2 Sentinelas patrulhando e quebra em 0.65s. Esmague com Queda!",
+        requiredBits: 3,
+        breakTime: 0.65,
+        minWidth: 52,
+        maxWidth: 68,
+        tiltSensitivity: 1.15,
+        themeColor: '#b537f2',
+        portalPos: { x: 120, y: 130 },
+        bitPositions: [
+          { x: 300, y: 220 },
+          { x: 680, y: 240 },
+          { x: 850, y: 380 }
+        ],
+        spawnInterval: 1.25,
+        sentinelCount: 2,
+        laserInterval: 4.4
+      },
+      {
+        id: 3,
+        name: "SETOR GAMA: KERNEL PANIC",
+        sub: "Quebra em 0.50s, choque ativo e lasers frequentes!",
+        requiredBits: 3,
+        breakTime: 0.50,
+        minWidth: 46,
+        maxWidth: 60,
+        tiltSensitivity: 1.35,
+        themeColor: '#ffaa00',
+        portalPos: { x: 480, y: 120 },
+        bitPositions: [
+          { x: 150, y: 360 },
+          { x: 800, y: 320 },
+          { x: 480, y: 280 }
+        ],
+        spawnInterval: 1.1,
+        sentinelCount: 2,
+        laserInterval: 3.8
+      },
+      {
+        id: 4,
+        name: "SETOR DELTA: OVERCLOCK DO FIREWALL",
+        sub: "3 Sentinelas e quebra veloz em 0.38s! 4 Bits!",
+        requiredBits: 4,
+        breakTime: 0.38,
+        minWidth: 40,
+        maxWidth: 52,
+        tiltSensitivity: 1.55,
+        themeColor: '#ff0055',
+        portalPos: { x: 840, y: 110 },
+        bitPositions: [
+          { x: 140, y: 220 },
+          { x: 360, y: 340 },
+          { x: 600, y: 220 },
+          { x: 780, y: 400 }
+        ],
+        spawnInterval: 0.95,
+        sentinelCount: 3,
+        laserInterval: 3.2
+      },
+      {
+        id: 5,
+        name: "SETOR ÔMEGA: O VAZIO QUÂNTICO",
+        sub: "O teste supremo de reflexos. Quebra instantânea em 0.28s!",
+        requiredBits: 4,
+        breakTime: 0.28,
+        minWidth: 35,
+        maxWidth: 45,
+        tiltSensitivity: 1.75,
+        themeColor: '#ffd700',
+        portalPos: { x: 480, y: 95 },
+        bitPositions: [
+          { x: 200, y: 190 },
+          { x: 760, y: 190 },
+          { x: 260, y: 380 },
+          { x: 700, y: 380 }
+        ],
+        spawnInterval: 0.85,
+        sentinelCount: 4,
+        laserInterval: 2.7
+      }
+    ];
+
+    // --- 8. MOTOR PRINCIPAL DO JOGO (GAME ENGINE COM MÚLTIPLAS FASES) ---
+    class GameEngine {
+      constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.width = this.canvas.width;
+        this.height = this.canvas.height;
+
+        this.particles = new ParticleSystem();
+        this.player = new Player(480, 240);
+        this.portal = new DimensionalPortal(830, 150);
+        this.firewallLaser = new FirewallLaser(this.width, this.height);
+
+        this.platforms = [];
+        this.bits = [];
+        this.sentinels = [];
+        this.keys = {};
+
+        // Estados: 'START', 'PLAYING', 'WARPING', 'GAMEOVER', 'VICTORY'
+        this.state = 'START';
+        this.currentStageIndex = 0;
+        this.lives = 3;
+        this.maxLives = 3;
+        this.survivalTime = 0.0;
+        this.highScore = parseFloat(localStorage.getItem('ultimo_pixel_highscore')) || 0.0;
+        this.spawnTimer = 0;
+        this.screenShake = 0;
+
+        // Sistema de Combo & Overclock
+        this.combo = 0;
+        this.maxCombo = 0;
+        this.comboTimer = 0;
+
+        // Animação de transição de fase
+        this.warpTimer = 0;
+        this.warpProgress = 0;
+
+        this.bgStars = [];
+        for (let i = 0; i < 45; i++) {
+          this.bgStars.push({
+            x: Math.random() * this.width,
+            y: Math.random() * this.height,
+            size: Math.random() * 2 + 1,
+            speed: Math.random() * 0.4 + 0.1,
+            alpha: Math.random() * 0.6 + 0.2
+          });
+        }
+
+        this.lastTime = performance.now();
+        this.initEvents();
+        this.loadStage(0, false);
+      }
+
+      getCurrentStageConfig() {
+        if (this.currentStageIndex < STAGE_CONFIGS.length) {
+          return STAGE_CONFIGS[this.currentStageIndex];
+        }
+        // Modo Infinito Prestígio após a Fase 5
+        const loopCount = this.currentStageIndex - STAGE_CONFIGS.length + 1;
+        return {
+          id: this.currentStageIndex + 1,
+          name: `SETOR ÔMEGA+ [LOOP ${loopCount}]`,
+          sub: "Modo Prestígio Infinito: Alta velocidade!",
+          requiredBits: 4,
+          breakTime: Math.max(0.20, 0.28 - loopCount * 0.02),
+          minWidth: 32,
+          maxWidth: 42,
+          tiltSensitivity: 1.85,
+          themeColor: '#38bdf8',
+          portalPos: { x: 480, y: 100 },
+          bitPositions: [
+            { x: 180, y: 220 },
+            { x: 780, y: 220 },
+            { x: 320, y: 360 },
+            { x: 640, y: 360 }
+          ],
+          spawnInterval: 0.75,
+          sentinelCount: Math.min(5, 3 + loopCount),
+          laserInterval: Math.max(2.0, 2.7 - loopCount * 0.15)
+        };
+      }
+
+      loadStage(index, autoPlay = true) {
+        this.currentStageIndex = index;
+        const config = this.getCurrentStageConfig();
+
+        this.particles.clear();
+        this.platforms = [];
+        this.bits = [];
+
+        // Posiciona Portal
+        this.portal = new DimensionalPortal(config.portalPos.x, config.portalPos.y);
+        this.portal.setOpen(false, config.themeColor);
+
+        // Gera Bits de Dados da Fase
+        config.bitPositions.forEach((pos, idx) => {
+          this.bits.push(new CollectibleBit(pos.x, pos.y, idx));
+        });
+
+        // Plataforma Segura Inicial Central de Spawn
+        this.platforms.push(new UIPlatform({
+          x: 430,
+          y: 330,
+          width: 100,
+          height: 30,
+          title: `[ BASE_${config.id} ]`,
+          type: 'BUTTON',
+          accentColor: config.themeColor,
+          mass: 1.4,
+          springY: 330,
+          maxStandTimer: config.breakTime * 1.3,
+          edgeTiltSensitivity: config.tiltSensitivity
+        }));
+
+        // Plataformas iniciais com variedades especiais
+        this.platforms.push(new UIPlatform({
+          x: 190,
+          y: 280,
+          width: 75,
+          height: 28,
+          title: '▲ BOUNCE ▲',
+          type: 'BOUNCE',
+          accentColor: '#39ff14',
+          springY: 280,
+          maxStandTimer: config.breakTime * 2.2,
+          edgeTiltSensitivity: config.tiltSensitivity
+        }));
+
+        this.platforms.push(new UIPlatform({
+          x: 680,
+          y: 260,
+          width: 75,
+          height: 28,
+          title: '◀ SLIDE ▶',
+          type: 'MOVING',
+          accentColor: '#38bdf8',
+          springY: 260,
+          maxStandTimer: config.breakTime * 1.2,
+          edgeTiltSensitivity: config.tiltSensitivity,
+          moveRange: 80,
+          moveSpeed: 1.5
+        }));
+
+        // Plataforma de choque a partir da fase 2, ou alerta 404 na fase 1
+        if (config.id >= 2) {
+          this.platforms.push(new UIPlatform({
+            x: 140,
+            y: 420,
+            width: 70,
+            height: 28,
+            title: '⚡ 500V ⚡',
+            type: 'VOLT',
+            accentColor: '#ff0055',
+            springY: 420,
+            maxStandTimer: config.breakTime,
+            edgeTiltSensitivity: config.tiltSensitivity
+          }));
+        } else {
+          this.platforms.push(new UIPlatform({
+            x: 140,
+            y: 420,
+            width: 70,
+            height: 28,
+            title: '404',
+            type: 'ALERT',
+            accentColor: '#ffaa00',
+            springY: 420,
+            maxStandTimer: config.breakTime,
+            edgeTiltSensitivity: config.tiltSensitivity
+          }));
+        }
+
+        // Plataforma Glitch a partir da fase 3, ou RAM estável nas fases anteriores
+        if (config.id >= 3) {
+          this.platforms.push(new UIPlatform({
+            x: 750,
+            y: 420,
+            width: 65,
+            height: 28,
+            title: '0x404_GHOST',
+            type: 'GLITCH',
+            accentColor: '#c084fc',
+            springY: 420,
+            maxStandTimer: config.breakTime,
+            edgeTiltSensitivity: config.tiltSensitivity
+          }));
+        } else {
+          this.platforms.push(new UIPlatform({
+            x: 750,
+            y: 420,
+            width: 65,
+            height: 28,
+            title: '[ RAM ]',
+            accentColor: '#00f0ff',
+            springY: 420,
+            maxStandTimer: config.breakTime,
+            edgeTiltSensitivity: config.tiltSensitivity
+          }));
+        }
+
+        // Reposiciona Jogador
+        this.player.startX = 480;
+        this.player.startY = 240;
+        this.player.reset();
+
+        // Inimigos Sentinelas da Fase
+        this.sentinels = [];
+        const patrolPresets = [
+          { x: 280, y: 220, rangeX: 130, speed: 2.1 },
+          { x: 670, y: 310, rangeX: 120, speed: 2.5 },
+          { x: 480, y: 390, rangeX: 150, speed: 2.8 },
+          { x: 260, y: 160, rangeX: 110, speed: 3.2 }
+        ];
+        const sCount = config.sentinelCount || 1;
+        for (let i = 0; i < sCount; i++) {
+          const p = patrolPresets[i % patrolPresets.length];
+          this.sentinels.push(new GlitchSentinel(p.x, p.y, p.rangeX, p.speed));
+        }
+
+        // Configuração de Laser para a fase
+        this.firewallLaser.reset();
+        this.firewallLaser.cooldown = config.laserInterval || 4.2;
+
+        this.spawnTimer = 0;
+        if (autoPlay) {
+          this.state = 'PLAYING';
+        }
+      }
+
+      initEvents() {
+        window.addEventListener('keydown', (e) => {
+          this.keys[e.code] = true;
+          sound.init();
+
+          if ((e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Space') && !e.repeat) {
+            e.preventDefault();
+            if (this.state === 'START') {
+              this.state = 'PLAYING';
+              this.player.jump(this.particles, sound);
+            } else if (this.state === 'PLAYING') {
+              this.player.jump(this.particles, sound);
+            }
+          }
+
+          // Dash Quântico (Shift, K, J ou C)
+          if ((e.code === 'KeyK' || e.code === 'KeyJ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyC') && !e.repeat) {
+            e.preventDefault();
+            if (this.state === 'START') {
+              this.state = 'PLAYING';
+            } else if (this.state === 'PLAYING') {
+              this.player.dash(this.particles, sound, this.keys);
+            }
+          }
+
+          // Queda Rápida / Stomp (S ou Seta para Baixo)
+          if ((e.code === 'KeyS' || e.code === 'ArrowDown') && !e.repeat) {
+            if (this.state === 'PLAYING' && !this.player.isGrounded) {
+              this.player.fastFall(this.particles, sound);
+            }
+          }
+
+          // Ligar/Desligar Música Cyberpunk (M)
+          if (e.code === 'KeyM' && !e.repeat) {
+            sound.bgmMuted = !sound.bgmMuted;
+          }
+
+          if (e.code === 'KeyR' && !e.repeat) {
+            if (this.state === 'GAMEOVER' || this.state === 'VICTORY') {
+              this.lives = this.maxLives;
+              this.loadStage(0, true);
+            } else if (this.state === 'PLAYING') {
+              this.loadStage(this.currentStageIndex, true);
+            }
+          }
+        });
+
+        window.addEventListener('keyup', (e) => {
+          this.keys[e.code] = false;
+        });
+
+        this.canvas.addEventListener('mousedown', (e) => {
+          sound.init();
+          const rect = this.canvas.getBoundingClientRect();
+          const clickX = (e.clientX - rect.left) * (this.width / rect.width);
+          const clickY = (e.clientY - rect.top) * (this.height / rect.height);
+
+          if (this.state === 'START') {
+            this.state = 'PLAYING';
+          } else if (this.state === 'GAMEOVER' || this.state === 'VICTORY') {
+            if (
+              clickX >= this.width / 2 - 130 &&
+              clickX <= this.width / 2 + 130 &&
+              clickY >= 400 &&
+              clickY <= 455
+            ) {
+              this.lives = this.maxLives;
+              this.loadStage(0, true);
+            }
+          }
+        });
+      }
+
+      spawnRandomPlatform() {
+        const config = this.getCurrentStageConfig();
+        const stageId = config.id;
+
+        const miniCatalog = [
+          { title: '[ OK ]', type: 'BUTTON', color: '#00ff88' },
+          { title: '[ CPU ]', type: 'BUTTON', color: '#00f0ff' },
+          { title: '[ RAM ]', type: 'BUTTON', color: '#b537f2' },
+          { title: '[ RUN ]', type: 'BUTTON', color: '#38bdf8' },
+          { title: '[ SYS ]', type: 'BUTTON', color: '#10b981' },
+          { title: '404', type: 'ALERT', color: '#ffaa00' },
+          { title: 'BUG', type: 'ALERT', color: '#e879f9' },
+          // Plataforma Mola (BOUNCE)
+          { title: '▲ BOUNCE ▲', type: 'BOUNCE', color: '#39ff14' },
+          // Plataforma Móvel (MOVING)
+          { title: '◀ SLIDE ▶', type: 'MOVING', color: '#38bdf8' }
+        ];
+
+        // A partir da fase 2: Choque elétrico (VOLT)
+        if (stageId >= 2) {
+          miniCatalog.push({ title: '⚡ 500V ⚡', type: 'VOLT', color: '#ff0055' });
+        }
+
+        // A partir da fase 3: Plataforma Fantasma (GLITCH)
+        if (stageId >= 3) {
+          miniCatalog.push({ title: '0x404_GHOST', type: 'GLITCH', color: '#c084fc' });
+        }
+
+        const chosen = miniCatalog[Math.floor(Math.random() * miniCatalog.length)];
+        const width = Math.floor(Math.random() * (config.maxWidth - config.minWidth) + config.minWidth);
+        const height = 28;
+
+        const minX = 40;
+        const maxX = this.width - width - 40;
+        const spawnX = Math.random() * (maxX - minX) + minX;
+        const targetY = Math.random() * (this.height - 240) + 120;
+
+        const newPlat = new UIPlatform({
+          x: spawnX,
+          y: -50,
+          width: chosen.type === 'BOUNCE' ? Math.max(width, 72) : width,
+          height: height,
+          title: chosen.title,
+          type: chosen.type,
+          accentColor: chosen.color,
+          mass: Math.random() * 0.3 + 0.8,
+          springY: targetY,
+          maxStandTimer: chosen.type === 'BOUNCE' ? config.breakTime * 2.2 : config.breakTime,
+          edgeTiltSensitivity: config.tiltSensitivity,
+          moveRange: Math.random() * 60 + 60,
+          moveSpeed: Math.random() * 0.8 + 1.2
+        });
+
+        newPlat.vy = 4.2;
+        this.platforms.push(newPlat);
+      }
+
+      // --- TRATAMENTO DE COLISÃO AABB ---
+      resolveCollisions() {
+        const p = this.player;
+        let onAnyPlatform = false;
+
+        for (const plat of this.platforms) {
+          if (plat.isCollapsing && plat.y > 600) continue;
+          if (plat.type === 'GLITCH' && plat.isIntangible) continue;
+
+          const isIntersecting =
+            p.x + p.w > plat.x &&
+            p.x < plat.x + plat.width &&
+            p.y + p.h >= plat.y &&
+            p.y < plat.y + plat.height;
+
+          if (isIntersecting) {
+            const previousBottom = (p.y - p.vy) + p.h;
+            const platformTop = plat.y - plat.vy;
+
+            if (p.vy >= 0 && previousBottom <= platformTop + 14) {
+              // Plataforma de choque ativa (VOLT)
+              if (plat.type === 'VOLT' && plat.isElectrified) {
+                this.handlePlayerShock(plat);
+                break;
+              }
+
+              // Plataforma Mola (BOUNCE)
+              if (plat.type === 'BOUNCE') {
+                p.y = plat.y - p.h;
+                p.vy = -16.5;
+                p.isGrounded = false;
+                p.jumpsLeft = 2;
+                p.canDash = true;
+                p.scaleX = 0.55;
+                p.scaleY = 1.7;
+
+                plat.bounceAnim = 1.0;
+                sound.playSuperBounce();
+                this.screenShake = 6;
+                this.particles.emitBounceSparks(p.x + p.w / 2, plat.y);
+                plat.applyImpulse(7.5, p.x + p.w / 2);
+                break;
+              }
+
+              // Plataforma Normal ou Móvel
+              p.y = plat.y - p.h;
+              p.vy = 0;
+              p.isGrounded = true;
+              p.jumpsLeft = 2;
+              p.canDash = true;
+              p.currentPlatform = plat;
+              onAnyPlatform = true;
+
+              const platCenter = plat.x + plat.width / 2;
+              const playerCenter = p.x + p.w / 2;
+              const halfWidth = plat.width / 2;
+              const offset = Math.max(-1.3, Math.min(1.3, (playerCenter - platCenter) / halfWidth));
+
+              plat.isBeingStepped = true;
+              plat.steppedOffset = offset;
+
+              p.x += plat.vx;
+
+              // Move o jogador junto com a plataforma móvel
+              if (plat.type === 'MOVING') {
+                p.x += plat.deltaX;
+              }
+
+              if (Math.abs(offset) > 0.45) {
+                p.vx += offset * 0.35;
+              }
+
+              if (p.vy !== plat.vy && Math.abs(p.scaleY - 1.0) < 0.1) {
+                p.scaleX = 1.35;
+                p.scaleY = 0.65;
+                sound.playLand();
+                this.particles.emitDust(p.x + p.w / 2, plat.y, '#00ff88', 5);
+                plat.applyImpulse(4.5, p.x + p.w / 2);
+              }
+              break;
+            }
+          }
+        }
+
+        if (!onAnyPlatform) {
+          p.isGrounded = false;
+          p.currentPlatform = null;
+        }
+
+        // --- COLISÃO COM BITS DE DADOS ---
+        for (const bit of this.bits) {
+          if (!bit.isCollected) {
+            const dist = Math.hypot((p.x + p.w / 2) - bit.x, (p.y + p.h / 2) - bit.y);
+            if (dist < p.w / 2 + bit.size) {
+              bit.isCollected = true;
+              this.particles.emitBitCollect(bit.x, bit.y, bit.color);
+              this.screenShake = 4;
+
+              // Combo progressivo & pontuação
+              this.combo++;
+              this.comboTimer = 3.6;
+              if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+              sound.playComboUp(this.combo);
+
+              // Checa se todos os bits foram coletados para abrir o Portal
+              const remaining = this.bits.filter(b => !b.isCollected).length;
+              if (remaining === 0) {
+                this.portal.setOpen(true, this.getCurrentStageConfig().themeColor);
+                this.screenShake = 10;
+              }
+            }
+          }
+        }
+
+        // --- COLISÃO COM O PORTAL DIMENSIONAL ---
+        if (this.portal.isOpen) {
+          const distToPortal = Math.hypot((p.x + p.w / 2) - this.portal.x, (p.y + p.h / 2) - this.portal.y);
+          if (distToPortal < this.portal.radius + 4) {
+            this.triggerStageWarp();
+          }
+        }
+      }
+
+      handlePlayerShock(plat) {
+        sound.playShock();
+        this.screenShake = 11;
+        this.particles.emitShockParticles(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
+
+        const pushDir = this.player.x < plat.x + plat.width / 2 ? -1 : 1;
+        this.player.vx = pushDir * 8.5;
+        this.player.vy = -9.5;
+        this.player.isGrounded = false;
+        this.player.currentPlatform = null;
+        this.player.canDash = true;
+        this.player.jumpsLeft = 1;
+        this.player.scaleX = 1.4;
+        this.player.scaleY = 0.6;
+        this.combo = 0;
+
+        plat.triggerCollapse();
+
+        this.lives--;
+        if (this.lives <= 0) {
+          this.gameOver();
+        }
+      }
+
+      handleLaserDamage() {
+        sound.playShock();
+        this.screenShake = 14;
+        this.particles.emitShockParticles(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
+        this.player.vx = (Math.random() - 0.5) * 12;
+        this.player.vy = -10;
+        this.player.canDash = true;
+        this.combo = 0;
+
+        this.lives--;
+        if (this.lives <= 0) {
+          this.gameOver();
+        }
+      }
+
+      handleEnemyDamage(sentinel) {
+        sound.playShock();
+        this.screenShake = 12;
+        this.particles.emitShockParticles(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
+        const pushDir = this.player.x < sentinel.x + sentinel.w / 2 ? -1 : 1;
+        this.player.vx = pushDir * 8.5;
+        this.player.vy = -9.5;
+        this.player.canDash = true;
+        this.combo = 0;
+
+        this.lives--;
+        if (this.lives <= 0) {
+          this.gameOver();
+        }
+      }
+
+      triggerStageWarp() {
+        if (this.state === 'WARPING') return;
+        this.state = 'WARPING';
+        this.warpTimer = 1.3;
+        sound.playWarpStage();
+        this.screenShake = 12;
+        this.particles.emitStageCompleteVortex(this.portal.x, this.portal.y, this.portal.color);
+      }
+
+      handlePlayerFall() {
+        this.lives--;
+        sound.playDeath();
+        this.screenShake = 12;
+        this.particles.emitDeathExplosion(this.player.x, this.height - 20);
+
+        if (this.lives > 0) {
+          // Reaparece na base com respawn seguro da mesma fase
+          this.player.startX = 480;
+          this.player.startY = 240;
+          this.player.reset();
+
+          // Garante uma plataforma estável de apoio
+          this.platforms.push(new UIPlatform({
+            x: 430,
+            y: 330,
+            width: 100,
+            height: 30,
+            title: '[ RESPAWN ]',
+            accentColor: '#00ff88',
+            springY: 330,
+            maxStandTimer: this.getCurrentStageConfig().breakTime * 1.5
+          }));
+        } else {
+          this.gameOver();
+        }
+      }
+
+      gameOver() {
+        this.state = 'GAMEOVER';
+        this.screenShake = 15;
+      }
+
+      update(dt) {
+        for (const star of this.bgStars) {
+          star.y += star.speed;
+          if (star.y > this.height) {
+            star.y = 0;
+            star.x = Math.random() * this.width;
+          }
+        }
+
+        if (this.screenShake > 0) {
+          this.screenShake *= 0.9;
+          if (this.screenShake < 0.1) this.screenShake = 0;
+        }
+
+        // Animação de Salto Quântico (Transição de Fase)
+        if (this.state === 'WARPING') {
+          this.warpTimer -= dt;
+          this.portal.update(dt, this.particles);
+          this.particles.update();
+
+          if (this.warpTimer <= 0) {
+            // Avança para a próxima fase!
+            const nextStage = this.currentStageIndex + 1;
+            this.loadStage(nextStage, true);
+          }
+          return;
+        }
+
+        if (this.state === 'PLAYING') {
+          this.survivalTime += dt;
+
+          if (this.survivalTime > this.highScore) {
+            this.highScore = this.survivalTime;
+            localStorage.setItem('ultimo_pixel_highscore', this.highScore.toFixed(2));
+          }
+
+          const config = this.getCurrentStageConfig();
+
+          // Atualiza Gerador de Plataformas
+          this.spawnTimer += dt;
+          if (this.spawnTimer >= config.spawnInterval || this.platforms.length < 4) {
+            this.spawnRandomPlatform();
+            this.spawnTimer = 0;
+          }
+
+          // Atualiza Jogador
+          this.player.handleInput(this.keys);
+          this.player.update(this.particles, dt);
+
+          // Atualiza Portal e Itens
+          this.portal.update(dt, this.particles);
+          this.bits.forEach(b => b.update(dt));
+
+          // Trilha Sonora Cyberpunk Procedural em Tempo Real
+          sound.updateBGM(true);
+
+          // Decaimento do Combo
+          if (this.comboTimer > 0) {
+            this.comboTimer -= dt;
+            if (this.comboTimer <= 0) {
+              this.combo = 0;
+            }
+          }
+
+          // Aura de Overclock quando combo >= 3
+          if (this.combo >= 3) {
+            this.particles.emitOverclockAura(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
+          }
+
+          // Atualiza e Dispara Laser de Firewall
+          const laserFired = this.firewallLaser.update(dt, this.player.y, sound, this.particles);
+          if (laserFired) {
+            this.screenShake = 12;
+          }
+          if (this.firewallLaser.checkPlayerCollision(this.player)) {
+            this.handleLaserDamage();
+          }
+
+          // Atualiza Inimigos Sentinelas e Colisão (Stomp vs Dano)
+          for (const sentinel of this.sentinels) {
+            sentinel.update(dt);
+            if (!sentinel.isAlive) continue;
+
+            const p = this.player;
+            const isIntersecting =
+              p.x + p.w > sentinel.x &&
+              p.x < sentinel.x + sentinel.w &&
+              p.y + p.h >= sentinel.y &&
+              p.y < sentinel.y + sentinel.h;
+
+            if (isIntersecting) {
+              // STOMP: esmaga se o jogador estiver descendo ou caindo em cima
+              if (p.vy > 1.0 && p.y + p.h <= sentinel.y + 12) {
+                sentinel.isAlive = false;
+                sentinel.respawnTimer = 6.0;
+                sound.playEnemyStomp();
+                this.screenShake = 8;
+                this.particles.emitEnemyExplosion(sentinel.x + sentinel.w / 2, sentinel.y + sentinel.h / 2);
+
+                p.y = sentinel.y - p.h;
+                p.vy = -12.5; // Super quique vertical
+                p.isGrounded = false;
+                p.jumpsLeft = 2;
+                p.canDash = true;
+                p.scaleX = 0.55;
+                p.scaleY = 1.6;
+
+                this.combo++;
+                this.comboTimer = 3.6;
+                if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+                sound.playComboUp(this.combo);
+                break;
+              } else {
+                this.handleEnemyDamage(sentinel);
+                break;
+              }
+            }
+          }
+
+          // Queda no Vazio
+          if (this.player.y > this.height + 20) {
+            this.handlePlayerFall();
+          }
+        }
+
+        // Atualiza Plataformas
+        for (let i = this.platforms.length - 1; i >= 0; i--) {
+          const plat = this.platforms[i];
+          plat.update(dt, 1.0 + (this.currentStageIndex * 0.1));
+
+          if (plat.isCollapsing && !plat.emittedDebris) {
+            plat.emittedDebris = true;
+            this.screenShake = 6;
+            this.particles.emitCollapseDebris(plat.x, plat.y, plat.width, plat.height, plat.accentColor);
+          }
+
+          if (plat.hasFallen) {
+            this.platforms.splice(i, 1);
+          }
+        }
+
+        if (this.state === 'PLAYING') {
+          this.resolveCollisions();
+        }
+
+        this.particles.update();
+      }
+
+      draw() {
+        this.ctx.save();
+
+        if (this.screenShake > 0) {
+          const sx = (Math.random() - 0.5) * this.screenShake;
+          const sy = (Math.random() - 0.5) * this.screenShake;
+          this.ctx.translate(sx, sy);
+        }
+
+        const config = this.getCurrentStageConfig();
+
+        // Fundo com sutil tonalidade do tema da fase
+        this.ctx.fillStyle = '#0a0d14';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        // Grade Cibernética
+        this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.03)';
+        this.ctx.lineWidth = 1;
+        const gridSize = 40;
+        for (let x = 0; x < this.width; x += gridSize) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(x, 0);
+          this.ctx.lineTo(x, this.height);
+          this.ctx.stroke();
+        }
+        for (let y = 0; y < this.height; y += gridSize) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(0, y);
+          this.ctx.lineTo(this.width, y);
+          this.ctx.stroke();
+        }
+
+        // Estrelas de fundo
+        for (const star of this.bgStars) {
+          this.ctx.fillStyle = `rgba(0, 240, 255, ${star.alpha})`;
+          this.ctx.fillRect(star.x, star.y, star.size, star.size);
+        }
+
+        // Linha de advertência do Vazio
+        this.drawVoidDangerLine();
+
+        // Renderiza Raio Laser do Firewall
+        this.firewallLaser.draw(this.ctx);
+
+        // Renderiza Inimigos Sentinelas
+        for (const sentinel of this.sentinels) {
+          sentinel.draw(this.ctx);
+        }
+
+        // Renderiza Portal
+        this.portal.draw(this.ctx);
+
+        // Renderiza Bits Colecionáveis
+        for (const bit of this.bits) {
+          bit.draw(this.ctx);
+        }
+
+        // Renderiza Plataformas
+        for (const plat of this.platforms) {
+          plat.draw(this.ctx);
+        }
+
+        // Renderiza Partículas
+        this.particles.draw(this.ctx);
+
+        // Renderiza Jogador
+        if (this.state === 'PLAYING' || this.state === 'START') {
+          this.player.draw(this.ctx);
+        }
+
+        // HUD Avançado com Fases e Vidas
+        this.drawHUD();
+
+        // Telas de Interface
+        if (this.state === 'START') {
+          this.drawStartOverlay();
+        } else if (this.state === 'WARPING') {
+          this.drawWarpOverlay();
+        } else if (this.state === 'GAMEOVER') {
+          this.drawGameOverOverlay();
+        }
+
+        this.ctx.restore();
+      }
+
+      drawVoidDangerLine() {
+        const time = Date.now() * 0.003;
+        const pulse = (Math.sin(time) + 1) * 0.5;
+
+        const voidGrad = this.ctx.createLinearGradient(0, this.height - 28, 0, this.height);
+        voidGrad.addColorStop(0, 'rgba(255, 0, 85, 0)');
+        voidGrad.addColorStop(1, `rgba(255, 0, 85, ${0.15 + pulse * 0.1})`);
+
+        this.ctx.fillStyle = voidGrad;
+        this.ctx.fillRect(0, this.height - 28, this.width, 28);
+
+        this.ctx.save();
+        this.ctx.strokeStyle = `rgba(255, 51, 102, ${0.35 + pulse * 0.4})`;
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([8, 8]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, this.height - 4);
+        this.ctx.lineTo(this.width, this.height - 4);
+        this.ctx.stroke();
+        this.ctx.restore();
+      }
+
+      drawHUD() {
+        this.ctx.save();
+        const config = this.getCurrentStageConfig();
+
+        // Placar de Fase Atual
+        this.ctx.font = 'bold 15px monospace';
+        this.ctx.fillStyle = config.themeColor;
+        this.ctx.shadowColor = config.themeColor;
+        this.ctx.shadowBlur = 8;
+        this.ctx.fillText(`FASE ${config.id}: ${config.name}`, 25, 28);
+
+        // Subtexto com a Missão
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#8b949e';
+        this.ctx.font = '11px monospace';
+        this.ctx.fillText(config.sub, 25, 44);
+
+        // Indicador de Dash Quântico
+        const dashReady = this.player.canDash && this.player.dashCooldown <= 0;
+        this.ctx.font = 'bold 11px monospace';
+        this.ctx.fillStyle = dashReady ? '#00f0ff' : '#ff0055';
+        this.ctx.shadowColor = this.ctx.fillStyle;
+        this.ctx.shadowBlur = dashReady ? 8 : 0;
+        this.ctx.fillText(dashReady ? 'DASH: [PRONTO]' : 'DASH: [RECARGA]', 320, 28);
+
+        // Medidor de Combo & Modo Overclock
+        if (this.combo > 1) {
+          const isOverclock = this.combo >= 3;
+          const comboColor = isOverclock ? '#ffd700' : '#39ff14';
+          this.ctx.fillStyle = comboColor;
+          this.ctx.shadowColor = comboColor;
+          this.ctx.shadowBlur = isOverclock ? 14 : 6;
+          this.ctx.font = 'bold 12px monospace';
+          this.ctx.fillText(isOverclock ? `⚡ OVERCLOCK x${this.combo}! ⚡` : `COMBO x${this.combo}`, 440, 28);
+
+          // Barra de tempo de combo
+          const comboRatio = Math.max(0, this.comboTimer / 3.6);
+          this.ctx.fillRect(440, 33, 90 * comboRatio, 3);
+        }
+
+        // Indicador de Trilha Sonora BGM
+        this.ctx.shadowBlur = 0;
+        this.ctx.font = '10px monospace';
+        this.ctx.fillStyle = sound.bgmMuted ? '#4b5563' : '#a855f7';
+        this.ctx.fillText(`[M] SOM: ${sound.bgmMuted ? 'OFF' : 'ON'}`, 570, 28);
+
+        // Contador de Bits de Dados
+        const collectedCount = this.bits.filter(b => b.isCollected).length;
+        const totalBits = this.bits.length;
+        this.ctx.font = 'bold 13px monospace';
+        this.ctx.fillStyle = collectedCount === totalBits ? '#00ff88' : '#ffd700';
+        this.ctx.shadowColor = this.ctx.fillStyle;
+        this.ctx.shadowBlur = 6;
+        this.ctx.fillText(`BITS: ${collectedCount}/${totalBits}`, 670, 28);
+
+        // Alerta de Portal Aberto
+        if (this.portal.isOpen) {
+          const flash = Math.sin(Date.now() * 0.008) > 0;
+          this.ctx.fillStyle = flash ? '#00ff88' : '#ffffff';
+          this.ctx.shadowColor = '#00ff88';
+          this.ctx.shadowBlur = 8;
+          this.ctx.font = 'bold 11px monospace';
+          this.ctx.fillText('[PORTAL ABERTO!]', 670, 44);
+        }
+
+        // Vidas (Pixel Cores)
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#8b949e';
+        this.ctx.font = 'bold 12px monospace';
+        this.ctx.fillText('VIDAS:', this.width - 145, 28);
+        for (let i = 0; i < this.maxLives; i++) {
+          this.ctx.fillStyle = i < this.lives ? '#00ff88' : '#30363d';
+          this.ctx.shadowColor = i < this.lives ? '#00ff88' : 'transparent';
+          this.ctx.shadowBlur = i < this.lives ? 6 : 0;
+          this.ctx.fillRect(this.width - 90 + i * 22, 17, 15, 14);
+        }
+
+        this.ctx.restore();
+      }
+
+      drawStartOverlay() {
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(10, 13, 20, 0.86)';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        const boxW = 660;
+        const boxH = 370;
+        const boxX = (this.width - boxW) / 2;
+        const boxY = 125;
+
+        this.ctx.fillStyle = '#0d1117';
+        this.ctx.fillRect(boxX, boxY, boxW, boxH);
+
+        this.ctx.strokeStyle = '#00f0ff';
+        this.ctx.shadowColor = '#00f0ff';
+        this.ctx.shadowBlur = 16;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+        this.ctx.fillStyle = '#00f0ff';
+        this.ctx.font = 'bold 22px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('O ÚLTIMO PIXEL: HARDCORE OVERCLOCK', this.width / 2, boxY + 40);
+
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#e6edf3';
+        this.ctx.font = '12px monospace';
+        this.ctx.fillText('• DIFICULDADE EXTREMA: plataformas quebram em fração de segundos (0.8s a 0.28s)!', this.width / 2, boxY + 74);
+        this.ctx.fillText('• ⚠ CUIDADO COM LASERS: feixes fulminantes cortam a tela após aviso vermelho.', this.width / 2, boxY + 100);
+        this.ctx.fillText('• 👾 ESMAGUE BUGS (STOMP): pule ou aperte [S] em cima dos drones para destruí-los!', this.width / 2, boxY + 126);
+        this.ctx.fillText('• ⚡ MODO OVERCLOCK: encadeie bits e stomps em sequência para combo x2, x3...', this.width / 2, boxY + 152);
+        this.ctx.fillText('• [Shift] ou [K] ativa o DASH QUÂNTICO para salvar quedas ou desviar no ar.', this.width / 2, boxY + 178);
+        this.ctx.fillText('• Mola ▲ BOUNCE ▲ te lança alto; ⚡ 500V ⚡ dá choque; 0x404_GHOST desaparece!', this.width / 2, boxY + 204);
+        this.ctx.fillText('• Pressione [M] a qualquer momento para ligar/desligar a Trilha Sonora Synthwave.', this.width / 2, boxY + 230);
+
+        const flash = Math.sin(Date.now() * 0.006) > 0;
+        this.ctx.fillStyle = flash ? '#00ff88' : '#38bdf8';
+        this.ctx.shadowColor = '#00ff88';
+        this.ctx.shadowBlur = flash ? 14 : 4;
+        this.ctx.font = 'bold 16px monospace';
+        this.ctx.fillText('Pressione [ESPAÇO] ou [W] para Iniciar', this.width / 2, boxY + 310);
+
+        this.ctx.restore();
+      }
+
+      drawWarpOverlay() {
+        this.ctx.save();
+        const flash = (Math.sin(Date.now() * 0.015) + 1) * 0.5;
+        this.ctx.fillStyle = `rgba(0, 240, 255, ${0.2 + flash * 0.25})`;
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.shadowColor = '#00f0ff';
+        this.ctx.shadowBlur = 24;
+        this.ctx.font = 'bold 32px monospace';
+        this.ctx.fillText('SALTO DIMENSIONAL CONCLUÍDO!', this.width / 2, this.height / 2 - 10);
+
+        this.ctx.font = '16px monospace';
+        this.ctx.fillStyle = '#00ff88';
+        this.ctx.fillText('Carregando próximo setor...', this.width / 2, this.height / 2 + 30);
+
+        this.ctx.restore();
+      }
+
+      drawGameOverOverlay() {
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(7, 9, 14, 0.88)';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = '#ff0055';
+        this.ctx.shadowColor = '#ff0055';
+        this.ctx.shadowBlur = 20;
+        this.ctx.font = 'bold 36px monospace';
+        this.ctx.fillText('SISTEMA CORROMPIDO', this.width / 2, 220);
+
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#8b949e';
+        this.ctx.font = '15px monospace';
+        this.ctx.fillText('Você perdeu todos os seus Pixel Cores de backup.', this.width / 2, 260);
+
+        const config = this.getCurrentStageConfig();
+        this.ctx.fillStyle = '#00f0ff';
+        this.ctx.font = 'bold 20px monospace';
+        this.ctx.fillText(`Alcançou: Fase ${config.id} - ${config.name}`, this.width / 2, 310);
+        this.ctx.fillText(`Tempo Total: ${this.survivalTime.toFixed(2)}s`, this.width / 2, 340);
+
+        const btnW = 260;
+        const btnH = 50;
+        const btnX = this.width / 2 - btnW / 2;
+        const btnY = 395;
+
+        this.ctx.fillStyle = '#161b22';
+        this.ctx.fillRect(btnX, btnY, btnW, btnH);
+
+        this.ctx.strokeStyle = '#00ff88';
+        this.ctx.shadowColor = '#00ff88';
+        this.ctx.shadowBlur = 10;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(btnX, btnY, btnW, btnH);
+
+        this.ctx.fillStyle = '#00ff88';
+        this.ctx.font = 'bold 15px monospace';
+        this.ctx.fillText('REINICIAR CAMPANHA [R]', this.width / 2, btnY + 31);
+
+        this.ctx.restore();
+      }
+
+      loop(timestamp) {
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp;
+
+        this.update(dt);
+        this.draw();
+
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      start() {
+        requestAnimationFrame((t) => {
+          this.lastTime = t;
+          this.loop(t);
+        });
+      }
+    }
+
+    // Inicialização da Engine quando a página carrega
+    window.addEventListener('load', () => {
+      const game = new GameEngine('gameCanvas');
+      game.start();
+    });
+  </script>
+</body>
+</html>
